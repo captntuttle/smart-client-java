@@ -28,6 +28,7 @@ package com.emc.rest.smart;
 
 import com.sun.jersey.core.impl.provider.entity.XMLRootElementProvider;
 import com.sun.jersey.spi.inject.Injectable;
+import org.glassfish.jersey.message.internal.AbstractFormProvider;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.Produces;

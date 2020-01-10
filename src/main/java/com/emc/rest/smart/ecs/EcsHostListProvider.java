@@ -29,8 +29,9 @@ package com.emc.rest.smart.ecs;
 import com.emc.rest.smart.Host;
 import com.emc.rest.smart.HostListProvider;
 import com.emc.rest.smart.LoadBalancer;
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.WebResource;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.WebTarget;
 import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,8 +101,14 @@ public class EcsHostListProvider implements HostListProvider {
     @Override
     public void runHealthCheck(Host host) {
         // header is workaround for STORAGE-1833
-        PingResponse response = client.resource(getRequestUri(host, "/?ping")).header("x-emc-namespace", "x")
-                .get(PingResponse.class);
+//        PingResponse response = client.resource(getRequestUri(host, "/?ping")).header("x-emc-namespace", "x")
+//                .get(PingResponse.class);
+
+        PingResponse response = client.target(getRequestUri(host,"/?ping"))
+                .request()
+                .header("x-emc-namespace", "x")
+                .buildGet()
+                .invoke(PingResponse.class);
 
         if (host instanceof VdcHost) {
             PingItem.Status status = PingItem.Status.OFF;
@@ -116,7 +123,7 @@ public class EcsHostListProvider implements HostListProvider {
 
     @Override
     public void destroy() {
-        client.destroy();
+        client.close();
     }
 
     protected List<Host> getDataNodes(Host host) {
@@ -139,15 +146,21 @@ public class EcsHostListProvider implements HostListProvider {
         }
 
         // construct request
-        WebResource.Builder request = client.resource(uri).getRequestBuilder();
+//        WebResource.Builder request = client.resource(uri).getRequestBuilder();
+        WebTarget resourceTarget = client.target(uri);
+        Invocation request = resourceTarget.request()
+                .header("Date", rfcDate)
+                .header("Authorization", "AWS " + user + ":" + signature)
+                .buildGet();
 
         // add date and auth headers
-        request.header("Date", rfcDate);
-        request.header("Authorization", "AWS " + user + ":" + signature);
+//        request.header("Date", rfcDate);
+//        request.header("Authorization", "AWS " + user + ":" + signature);
 
         // make REST call
         log.debug("retrieving VDC node list from {}", host.getName());
-        List<String> dataNodes = request.get(ListDataNode.class).getDataNodes();
+//        List<String> dataNodes = request.get(ListDataNode.class).getDataNodes();
+        List<String> dataNodes = request.invoke(ListDataNode.class).getDataNodes();
 
         List<Host> hosts = new ArrayList<Host>();
         for (String node : dataNodes) {

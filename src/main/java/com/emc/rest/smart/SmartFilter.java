@@ -31,13 +31,18 @@ import com.sun.jersey.api.client.ClientRequest;
 import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.filter.ClientFilter;
 
+import javax.ws.rs.client.ClientRequestContext;
+import javax.ws.rs.client.ClientRequestFilter;
+import javax.ws.rs.client.ClientResponseContext;
+import javax.ws.rs.client.ClientResponseFilter;
+
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 
-public class SmartFilter extends ClientFilter {
+public class SmartFilter implements ClientResponseFilter, ClientRequestFilter {
     public static final String BYPASS_LOAD_BALANCER = "com.emc.rest.smart.bypassLoadBalancer";
 
     private SmartConfig smartConfig;
@@ -47,31 +52,33 @@ public class SmartFilter extends ClientFilter {
     }
 
     @Override
-    public ClientResponse handle(ClientRequest request) throws ClientHandlerException {
+    public void filter(ClientRequestContext requestContext, ClientResponseContext responseContext) throws IOException {
         // check for bypass flag
-        Boolean bypass = (Boolean) request.getProperties().get(BYPASS_LOAD_BALANCER);
+//        Boolean bypass = (Boolean) requestContext.getProperties().get(BYPASS_LOAD_BALANCER);
+        Boolean bypass = (Boolean) requestContext.getProperty(BYPASS_LOAD_BALANCER);
+
         if (bypass != null && bypass) {
-            return getNext().handle(request);
+            return;
         }
 
         // get highest ranked host for next request
-        Host host = smartConfig.getLoadBalancer().getTopHost(request.getProperties());
+        Host host = smartConfig.getLoadBalancer().getTopHost(requestContext.getProperties());
 
         // replace the host in the request
-        URI uri = request.getURI();
+        URI uri = requestContext.getURI();
         try {
             org.apache.http.HttpHost httpHost = new org.apache.http.HttpHost(host.getName(), uri.getPort(), uri.getScheme());
             uri = org.apache.http.client.utils.URIUtils.rewriteURI(uri, httpHost);
         } catch (URISyntaxException e) {
             throw new RuntimeException("load-balanced host generated invalid URI", e);
         }
-        request.setURI(uri);
+        requestContext.setURI(uri);
 
         // track requests stats for LB ranking
         host.connectionOpened(); // not really, but we can't (cleanly) intercept any lower than this
         try {
             // call to delegate
-            ClientResponse response = getNext().handle(request);
+            ClientResponse response = getNext().handle(requestContext);
 
             // capture request stats
             if (response.getStatus() >= 500 && response.getStatus() != 501) {
@@ -84,7 +91,7 @@ public class SmartFilter extends ClientFilter {
             // wrap the input stream so we can capture the actual connection close
             response.setEntityInputStream(new WrappedInputStream(response.getEntityInputStream(), host));
 
-            return response;
+//            return response;
         } catch (RuntimeException e) {
 
             // capture requests stats (error)
@@ -93,6 +100,11 @@ public class SmartFilter extends ClientFilter {
 
             throw e;
         }
+    }
+
+    @Override
+    public void filter(ClientRequestContext requestContext) throws IOException {
+
     }
 
     /**
